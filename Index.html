@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mobile Hand Particle</title>
+
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: black;
+  }
+  video {
+    display: none;
+  }
+</style>
+
+<!-- Three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<!-- MediaPipe Hands -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+</head>
+
+<body>
+
+<video id="video" autoplay playsinline muted></video>
+
+<script>
+/* ------------------ THREE.JS SETUP ------------------ */
+const scene = new THREE.Scene();
+
+const camera3D = new THREE.PerspectiveCamera(
+  75,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000
+);
+camera3D.position.z = 4;
+
+const renderer = new THREE.WebGLRenderer({ alpha: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+/* ------------------ PARTICLES ------------------ */
+const COUNT = 800; // mobile friendly
+const geometry = new THREE.BufferGeometry();
+const positions = new Float32Array(COUNT * 3);
+
+for (let i = 0; i < COUNT * 3; i++) {
+  positions[i] = (Math.random() - 0.5) * 4;
+}
+
+geometry.setAttribute(
+  "position",
+  new THREE.BufferAttribute(positions, 3)
+);
+
+const material = new THREE.PointsMaterial({
+  color: 0xff0055,
+  size: 0.05
+});
+
+const particles = new THREE.Points(geometry, material);
+scene.add(particles);
+
+/* ------------------ SHAPES ------------------ */
+function heartShape(i) {
+  const t = i * 0.2;
+  return [
+    16 * Math.pow(Math.sin(t), 3) / 40,
+    (13 * Math.cos(t) - 5 * Math.cos(2*t)) / 40,
+    0
+  ];
+}
+
+function flowerShape(i) {
+  const t = i * 0.25;
+  return [
+    Math.sin(t) * Math.cos(5*t),
+    Math.cos(t),
+    0
+  ];
+}
+
+let currentShape = heartShape;
+
+function switchShape(shapeFn) {
+  const pos = geometry.attributes.position.array;
+  for (let i = 0; i < COUNT; i++) {
+    const [x, y, z] = shapeFn(i);
+    pos[i*3] = x;
+    pos[i*3+1] = y;
+    pos[i*3+2] = z;
+  }
+  geometry.attributes.position.needsUpdate = true;
+}
+
+/* ------------------ HAND TRACKING ------------------ */
+const video = document.getElementById("video");
+
+const hands = new Hands({
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 0,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.7
+});
+
+hands.onResults(results => {
+  if (!results.multiHandLandmarks) return;
+
+  const hand = results.multiHandLandmarks[0];
+  const thumb = hand[4];
+  const index = hand[8];
+  const wrist = hand[0];
+
+  // Distance between thumb & index
+  const dist = Math.hypot(
+    thumb.x - index.x,
+    thumb.y - index.y
+  );
+
+  if (dist > 0.08) {
+    particles.scale.set(1.5, 1.5, 1.5);
+    particles.material.color.set(0x00ffff);
+  } else {
+    particles.scale.set(0.8, 0.8, 0.8);
+    particles.material.color.set(0xff0055);
+  }
+
+  // Left / Right swipe = shape change
+  if (wrist.x < 0.3) {
+    currentShape = heartShape;
+    switchShape(currentShape);
+  }
+  if (wrist.x > 0.7) {
+    currentShape = flowerShape;
+    switchShape(currentShape);
+  }
+});
+
+const cam = new Camera(video, {
+  onFrame: async () => {
+    await hands.send({ image: video });
+  },
+  width: 640,
+  height: 480
+});
+cam.start();
+
+/* ------------------ ANIMATION ------------------ */
+function animate() {
+  requestAnimationFrame(animate);
+  particles.rotation.y += 0.002;
+  renderer.render(scene, camera3D);
+}
+animate();
+
+/* ------------------ RESIZE ------------------ */
+window.addEventListener("resize", () => {
+  camera3D.aspect = window.innerWidth / window.innerHeight;
+  camera3D.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+
+</body>
+  </html>
